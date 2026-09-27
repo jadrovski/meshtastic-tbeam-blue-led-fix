@@ -1,0 +1,70 @@
+--- pristine/src/sleep.cpp	2026-09-27 16:33:41.687746124 +0300
++++ firmware-2.7.26.54e0d8d/src/sleep.cpp	2026-09-27 16:27:40.952090508 +0300
+@@ -297,6 +297,12 @@
+         gpio_hold_en((gpio_num_t)BUTTON_PIN);
+     }
+ #endif
++#if defined(LED_POWER) && defined(LED_STATE_ON)
++    // Hold the power LED pin at its OFF level through deep sleep, so the LED does not glow
++    pinMode(LED_POWER, OUTPUT);
++    digitalWrite(LED_POWER, !LED_STATE_ON);
++    gpio_hold_en((gpio_num_t)LED_POWER);
++#endif
+ #ifdef SENSECAP_INDICATOR
+     // Portexpander definition does not pass GPIO_IS_VALID_OUTPUT_GPIO
+     pinMode(LORA_CS, OUTPUT);
+@@ -334,7 +340,9 @@
+         // If we want to leave the radio receiving in would be 11.5mA current draw, but most of the time it is just waiting
+         // in its sequencer (true?) so the average power draw should be much lower even if we were listening for packets
+         // all the time.
+-        PMU->setChargingLedMode(XPOWERS_CHG_LED_OFF);
++        // T-Beam: leave CHGLED in the PMIC's autonomous charge-indication mode
++        // (set in Power.cpp). Writing a manual mode here would make the LED
++        // stick on/off after the board powers down.
+ 
+         uint8_t model = PMU->getChipModel();
+         if (model == XPOWERS_AXP2101) {
+--- pristine/src/modules/StatusLEDModule.cpp	2026-09-27 16:33:41.999746748 +0300
++++ firmware-2.7.26.54e0d8d/src/modules/StatusLEDModule.cpp	2026-09-27 16:27:30.499074006 +0300
+@@ -203,12 +203,9 @@
+ #endif
+ 
+ #if defined(HAS_PMU)
+-    if (pmu_found && PMU) {
+-        // blink the axp led
+-        PMU->setChargingLedMode(CHARGE_LED_state ? XPOWERS_CHG_LED_ON : XPOWERS_CHG_LED_OFF);
+-    }
++    // T-Beam: CHGLED is owned by the PMIC's autonomous charge-indication mode
++    // (see Power.cpp). Firmware must not write manual LED modes here.
+ #endif
+-
+ #ifdef PCA_LED_POWER
+     io.digitalWrite(PCA_LED_POWER, CHARGE_LED_state);
+ #endif
+@@ -272,10 +269,8 @@
+ {
+ 
+ #if defined(HAS_PMU)
+-    if (pmu_found && PMU) {
+-        // blink the axp led
+-        PMU->setChargingLedMode(LEDon ? XPOWERS_CHG_LED_ON : XPOWERS_CHG_LED_OFF);
+-    }
++    // T-Beam: CHGLED is owned by the PMIC's autonomous charge-indication mode
++    // (see Power.cpp). Firmware must not write manual LED modes here.
+ #endif
+     uint8_t ledState = LEDon ? LED_STATE_ON : LED_STATE_OFF;
+ #ifdef PCA_LED_POWER
+--- pristine/src/Power.cpp	2026-09-27 16:33:42.355747460 +0300
++++ firmware-2.7.26.54e0d8d/src/Power.cpp	2026-09-27 16:27:04.892034334 +0300
+@@ -1414,6 +1414,11 @@
+ 
+     readPowerStatus();
+ 
++    // T-Beam: hand the CHGLED over to the PMIC's autonomous charge-indication mode.
++    // The LED then shows real charging status (on while charging, off when done),
++    // including while the board is powered off - and never sticks on after shutdown.
++    PMU->setChargingLedMode(XPOWERS_CHG_LED_CTRL_CHG);
++
+     pmu_found = true;
+ 
+     return pmu_found;
